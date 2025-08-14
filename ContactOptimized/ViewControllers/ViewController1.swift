@@ -1,33 +1,47 @@
 import UIKit
+import CoreData
 
 class ViewController1: UIViewController, UITableViewDelegate
 {
-    private let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
+    private var context: NSManagedObjectContext
     
-    private var contactList: [Contact] = []
-    private var displayContactList: [Contact] = []
+    private var contactsFetchController: NSFetchedResultsController<Contacts>?
     
-    private var currentID: Int = 0
-    
-    private var contactTableSize: Int = 0
-    
-    private lazy var indexToUpdate: Int? = nil
+    private var contactHandler: ContactsDataHandler
     
     private lazy var contactSearchController: UISearchController = UISearchController()
     
-    private let contacTableView: UITableView =
+    private var currentID: Int = 0
+    
+    init()
     {
-        let contacTableView = UITableView()
+        guard let context = UIApplication.shared.delegate as? AppDelegate else { fatalError() }
+
+        self.context = context.persistentContainer.viewContext
         
-        contacTableView.register(
+        self.contactHandler = ContactsDataHandler(self.context)
+        
+        super.init(nibName: nil, bundle: nil)
+    }
+    
+    required init?(coder: NSCoder)
+    {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    private let contactTableView: UITableView =
+    {
+        let contactTableView = UITableView()
+        
+        contactTableView.register(
             CustomTableCell.self,
             forCellReuseIdentifier: "CustomTableCell"
         )
-        contacTableView.translatesAutoresizingMaskIntoConstraints = false
-        contacTableView.estimatedRowHeight = 300
-        contacTableView.rowHeight = 70
+        contactTableView.translatesAutoresizingMaskIntoConstraints = false
+        contactTableView.estimatedRowHeight = 300
+        contactTableView.rowHeight = 70
         
-        return contacTableView
+        return contactTableView
     }()
     
     override func viewDidLoad()
@@ -35,6 +49,10 @@ class ViewController1: UIViewController, UITableViewDelegate
         super.viewDidLoad()
         
         self.setUIs()
+        
+        self.contactHandler.fetchAllContacts(fetchController: self.contactsFetchController)
+        
+        self.contactTableView.reloadData()
     }
     
 }
@@ -55,23 +73,25 @@ extension ViewController1
         
         self.view.backgroundColor = .white
         
-        self.view.addSubview(self.contacTableView)
-        self.contacTableView.delegate = self
-        self.contacTableView.dataSource = self
-        
-        self.configureSearchController()
+        self.view.addSubview(self.contactTableView)
+        self.contactTableView.delegate = self
+        self.contactTableView.dataSource = self
         
         self.setConstraints()
+        
+        self.configureFetchController()
+        
+        self.configureSearchController()
     }
     
     private func setConstraints()
     {
         NSLayoutConstraint.activate([
             
-            self.contacTableView.topAnchor.constraint(equalTo: self.view.topAnchor, constant: 20),
-            self.contacTableView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
-            self.contacTableView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
-            self.contacTableView.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor),
+            self.contactTableView.topAnchor.constraint(equalTo: self.view.topAnchor, constant: 20),
+            self.contactTableView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
+            self.contactTableView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
+            self.contactTableView.bottomAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.bottomAnchor),
             
         ])
     }
@@ -84,40 +104,7 @@ extension ViewController1
         self.navigationController?.pushViewController(viewController2, animated: true)
     }
     
-    private func updateContactData(contactToUpdate: Contact)
-    {
-        let ID = contactToUpdate.getID()
-        
-        if let indexInDisplayList = self.displayContactList.firstIndex(where: { $0.getID() == ID })
-        {
-            self.displayContactList[indexInDisplayList] = contactToUpdate
-        }
-        
-        if let indexInContactList = self.contactList.firstIndex(where: { $0.getID() == ID })
-        {
-            self.contactList[indexInContactList] = contactToUpdate
-        }
-        
-        self.contacTableView.reloadData()
-    }
-    
-    private func onDelete(_ ID: String)
-    {
-        
-        if let indexInDisplayList = self.displayContactList.firstIndex(where: { $0.getID() == ID })
-        {
-            self.displayContactList.remove(at: indexInDisplayList)
-        }
-        
-        if let indexInContactList = self.contactList.firstIndex(where: { $0.getID() == ID })
-        {
-            self.contactList.remove(at: indexInContactList)
-        }
-
-        self.contacTableView.reloadData()
-    }
-    
-    private func handleNavigation(contact: Contact)
+    private func handleNavigation(contact: Contacts)
     {
         let viewController2 = ViewController2(contact, nil)
         viewController2.delegate = self
@@ -128,14 +115,20 @@ extension ViewController1
 
 extension ViewController1: UITableViewDataSource
 {
-    func tableView(_ contacTableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+    func tableView(_ contactTableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        
         let cell = CustomTableCell()
         
-        cell.configure(self.displayContactList[indexPath.row])
+        guard let contact = self.contactsFetchController?.object(at: indexPath) else { return cell }
+        
+        cell.configure(contact)
         cell.deleteButton?.addAction(
             UIAction
             { action in
-                self.onDelete(self.displayContactList[indexPath.row].getID())
+                
+                self.contactHandler.deleteContact(contactToDelete: contact)
+                self.contactHandler.fetchAllContacts(fetchController: self.contactsFetchController)
+                self.contactTableView.reloadData()
             },
             for: .touchUpInside
         )
@@ -143,35 +136,52 @@ extension ViewController1: UITableViewDataSource
         return cell
     }
     
-    func tableView(_ contacTableView: UITableView, numberOfRowsInSection section: Int) -> Int
+    func tableView(_ contactTableView: UITableView, numberOfRowsInSection section: Int) -> Int
     {
-        return self.displayContactList.count
+        return self.contactsFetchController?.fetchedObjects?.count ?? 0
     }
     
-    func tableView(_ contacTableView: UITableView, didSelectRowAt indexPath: IndexPath)
+    func tableView(_ contactTableView: UITableView, didSelectRowAt indexPath: IndexPath)
     {
         
-        self.handleNavigation(contact: self.displayContactList[indexPath.row])
+        guard let contact = self.contactsFetchController?.object(at: indexPath) else { return }
         
-        self.contacTableView.deselectRow(at: indexPath, animated: true)
+        self.handleNavigation(contact: contact)
+        
+        self.contactTableView.deselectRow(at: indexPath, animated: true)
     }
     
 }
 
 extension ViewController1: DataDelegate
 {
-    func receiveContact(_ contact: Contact, isCreated: Bool)
-    {
-        if isCreated
+    func receiveContact(
+        _ contact: Contacts?,
+        contactID: String?,
+        contactName: String,
+        contactNumber: String
+    ) {
+        
+        if contact == nil
         {
-            self.displayContactList.removeAll()
-            self.contactList.append(contact)
-            self.displayContactList = self.contactList
-            self.contacTableView.reloadData()
+            guard let ID = contactID else { return }
+            
+            self.contactHandler.addContact(
+                contactID: ID,
+                contactName: contactName,
+                contactNumber: contactNumber
+            )
         } else
         {
-            self.updateContactData(contactToUpdate: contact)
+            self.contactHandler.updateContact(
+                contactToUpdate: contact,
+                updatedContactName: contactName,
+                updatedContactNumber: contactNumber
+            )
         }
+        
+        self.contactHandler.fetchAllContacts(fetchController: self.contactsFetchController)
+        self.contactTableView.reloadData()
     }
 }
 
@@ -183,53 +193,27 @@ extension ViewController1: UISearchBarDelegate, UISearchResultsUpdating
         
         guard let searchText = searchQuery else { return }
         
-        self.displayContactList.removeAll()
+        var searchPredicate: NSPredicate? = nil
         
-        if searchText.isEmpty
+        if !searchText.isEmpty
         {
-            self.displayContactList = self.contactList
+            searchPredicate = NSPredicate(format: "(contactName contains[cd] %@ OR contactNumber contains[cd] %@)", searchText, searchText)
         }
         
-        var filteredList: [Contact] = []
+        self.contactsFetchController?.fetchRequest.predicate = searchPredicate
+        self.contactHandler.fetchAllContacts(fetchController: self.contactsFetchController)
         
-        for index in 0..<self.contactList.count
-        {
-            if self.contactList[index].name.lowercased().starts(with: searchText.lowercased()) || self.contactList[index].number.starts(with: searchText)
-            {
-                filteredList.append(self.contactList[index])
-            }
-        }
-        
-        self.displayContactList.removeAll()
-        self.displayContactList = filteredList
-        
-        self.contacTableView.reloadData()
-        
+        self.contactTableView.reloadData()
     }
     
-    func searchBarShouldBeginEditing(_ searchBar: UISearchBar) -> Bool
-    {
+    func searchBarCancelButtonClicked(_ searchBar: UISearchBar){
+        searchBar.resignFirstResponder()
+        searchBar.text = ""
         
-        guard let searchQuery = searchBar.text else { return false }
+        self.contactsFetchController?.fetchRequest.predicate = nil
+        self.contactHandler.fetchAllContacts(fetchController: self.contactsFetchController)
         
-        self.displayContactList.removeAll()
-        
-        if searchQuery.isEmpty
-        {
-            self.displayContactList = self.contactList
-        } else
-        {
-            self.displayContactList = []
-        }
-        
-        return true
-    }
-    
-    func searchBarCancelButtonClicked(_ searchBar: UISearchBar)
-    {
-        self.displayContactList.removeAll()
-        self.displayContactList = self.contactList
-        self.contacTableView.reloadData()
+        self.contactTableView.reloadData()
     }
     
     private func configureSearchController()
@@ -240,84 +224,26 @@ extension ViewController1: UISearchBarDelegate, UISearchResultsUpdating
         self.contactSearchController.searchBar.placeholder = "Search"
         self.contactSearchController.searchBar.sizeToFit()
         
-        self.contacTableView.tableHeaderView = self.contactSearchController.searchBar
+        self.contactTableView.tableHeaderView = self.contactSearchController.searchBar
     }
     
 }
 
-extension ViewController1
+extension ViewController1: NSFetchedResultsControllerDelegate
 {
-    private func fetchAllContacts()
+    private func configureFetchController()
     {
-        do
-        {
-            let contacts = try self.context.fetch(Contacts.fetchRequest())
-            
-            contacts.forEach { contact in
-                
-                guard let name = contact.contactName,
-                let ID = contact.contactID,
-                let number = contact.contactNumber else { return }
-                
-                self.contactList.append(
-                    Contact(
-                        contactID: ID,
-                        contactName: name,
-                        contactNumber: number
-                    )
-                )
-            }
-            
-        } catch
-        {
-            print("Contacts are not fetched")
-        }
-    }
-    
-    private func addContact(contactID ID: String, contactName name: String, contactNumber number: String)
-    {
+        let request = Contacts.fetchRequest()
+        let sort = NSSortDescriptor(key: "contactID", ascending: true)
+        request.sortDescriptors = [sort]
+        request.fetchBatchSize = 15
         
-        let newContact = Contacts(context: self.context)
-        
-        newContact.contactID = ID
-        newContact.contactName = name
-        newContact.contactNumber = number
-        
-        do
-        {
-            try self.context.save()
-        } catch
-        {
-            print("Contact is not added")
-        }
-    }
-    
-    private func updateContact(contactToUpdate contact: Contacts, updatedContactName updatedName: String, updatedContactNumber updatedNumber: String)
-    {
-        contact.contactName = updatedName
-        contact.contactNumber = updatedNumber
-        
-        do
-        {
-            try self.context.save()
-        } catch
-        {
-            print("Contact is not updated")
-        }
-        
-    }
-    
-    private func deleteContact(contactToDelete contact: Contacts)
-    {
-        self.context.delete(contact)
-        
-        do
-        {
-            try self.context.save()
-        } catch
-        {
-            print("Contact is not deleted")
-        }
-        
+        self.contactsFetchController = NSFetchedResultsController(
+            fetchRequest: request,
+            managedObjectContext: self.context,
+            sectionNameKeyPath: nil,
+            cacheName: nil
+        )
+        self.contactsFetchController?.delegate = self
     }
 }

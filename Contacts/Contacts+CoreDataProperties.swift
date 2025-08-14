@@ -25,3 +25,30 @@ extension Contacts {
 extension Contacts : Identifiable {
 
 }
+
+extension Contacts
+{
+    public func toString() -> String
+    {
+        
+        guard let name = self.contactName,
+              let number = self.contactNumber else { return "" }
+        
+        return """
+           \(name)
+           \(number)
+       """
+    }
+    
+    public static func buildContact(contactID ID: String, contactName name: String, contactNumber number: String, appContext context: NSManagedObjectContext) -> Contacts
+    {
+        let contact = Contacts(context: context)
+        
+        contact.contactID = ID
+        contact.contactName = name
+        contact.contactNumber = number
+        
+        return contact
+    }
+    
+}

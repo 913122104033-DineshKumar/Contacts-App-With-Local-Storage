@@ -2,12 +2,13 @@ import UIKit
 
 class ViewController2: UIViewController, UITextFieldDelegate
 {
+    
     weak var delegate: DataDelegate?
-    private var contact: Contact?
+    private var contact: Contacts?
     
     private var currentID: Int?
     
-    init(_ contact: Contact?, _ currentID: Int?)
+    init(_ contact: Contacts?, _ currentID: Int?)
     {
         self.contact = contact
         self.currentID = currentID
@@ -93,8 +94,8 @@ class ViewController2: UIViewController, UITextFieldDelegate
         
         self.setConstraints()
         
-        guard let name = contact?.name,
-              let number = contact?.number else { return }
+        guard let name = contact?.contactName,
+              let number = contact?.contactNumber else { return }
         
         self.contactNameField.text = name
         self.contactNumberField.text = number
@@ -150,22 +151,21 @@ class ViewController2: UIViewController, UITextFieldDelegate
             // For creating a contact
             else {
                 self.delegate?.receiveContact(
-                    Contact(
+                    nil,
                     contactID: self.generateID(),
                     contactName: contactName,
                     contactNumber: contactNumber
-                    ),
-                    isCreated: true
                 )
                 self.navigationController?.popViewController(animated: true)
                 return
             }
             
-            // For updating a existing contact
-            contact.setName(name: contactName)
-            contact.setNumber(number: contactNumber)
-            
-            self.delegate?.receiveContact(contact, isCreated: false)
+            self.delegate?.receiveContact(
+                contact,
+                contactID: nil,
+                contactName: contactName,
+                contactNumber: contactNumber
+            )
             
             self.navigationController?.popViewController(animated: true)
         } else

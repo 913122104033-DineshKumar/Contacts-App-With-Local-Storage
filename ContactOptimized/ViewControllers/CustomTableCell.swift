@@ -44,6 +44,7 @@ class CustomTableCell: UITableViewCell
     private func setUIs(_ firstLetter: String)
     {
         let configurations = UIImage.SymbolConfiguration(pointSize: 22, weight: .bold, scale: .large)
+        
         let image = UIImage(systemName: "\(firstLetter.lowercased()).circle.fill", withConfiguration: configurations)
         
         guard let profile = profileImage,
@@ -85,9 +86,12 @@ class CustomTableCell: UITableViewCell
         ])
     }
     
-    public func configure(_ contact: Contact)
+    public func configure(_ contact: Contacts)
     {
-        let firstLetter = getFirstLetter(contact.name)
+        
+        guard let name = contact.contactName else { return }
+        
+        let firstLetter = getFirstLetter(name)
         
         self.setUIs(firstLetter)
         
@@ -102,11 +106,7 @@ class CustomTableCell: UITableViewCell
     override func prepareForReuse() {
         super.prepareForReuse()
         
-        self.profileImage?.image = nil
-        self.contentLabel?.text = nil
-        
-        self.contentLabel = nil
-        self.deleteButton = nil
+        print("Resuing")
     }
     
 }
